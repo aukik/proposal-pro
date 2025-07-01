@@ -39,54 +39,82 @@ const createCheckout = async ({
   successUrl: string;
   metadata?: Record<string, string>;
 }) => {
-  if (!process.env.POLAR_ACCESS_TOKEN) {
-    throw new Error("POLAR_ACCESS_TOKEN is not configured");
-  }
+  try {
+    console.log("createCheckout started with:", { customerEmail, productPriceId, successUrl });
 
-  const polar = new Polar({
-    server: (process.env.POLAR_SERVER as "sandbox" | "production") || "sandbox",
-    accessToken: process.env.POLAR_ACCESS_TOKEN,
-  });
-
-  // Get product ID from price ID
-  const productsResponse = await polar.products.list({
-    organizationId: process.env.POLAR_ORGANIZATION_ID,
-    isArchived: false,
-  });
-
-  let productId = null;
-  for await (const product of productsResponse) {
-    const productData = product as any;
-    const hasPrice = productData.prices?.some(
-      (price: any) => price.id === productPriceId
-    );
-    if (hasPrice) {
-      productId = productData.id;
-      break;
+    if (!process.env.POLAR_ACCESS_TOKEN) {
+      throw new Error("POLAR_ACCESS_TOKEN is not configured");
     }
+
+    if (!process.env.POLAR_ORGANIZATION_ID) {
+      throw new Error("POLAR_ORGANIZATION_ID is not configured");
+    }
+
+    const polar = new Polar({
+      server: (process.env.POLAR_SERVER as "sandbox" | "production") || "sandbox",
+      accessToken: process.env.POLAR_ACCESS_TOKEN,
+    });
+
+    console.log("Polar client initialized, fetching products...");
+
+    // Get product ID from price ID
+    const productsResponse = await polar.products.list({
+      organizationId: process.env.POLAR_ORGANIZATION_ID,
+      isArchived: false,
+    });
+
+    console.log("Products response received");
+
+    let productId = null;
+
+    // The response structure is { result: { items: [...], pagination: {...} } }
+    for await (const response of productsResponse) {
+      const responseData = response as any;
+
+      // Access the actual products from result.items
+      if (responseData.result && responseData.result.items) {
+        for (const productData of responseData.result.items) {
+          const hasPrice = productData.prices?.some(
+            (price: any) => price.id === productPriceId
+          );
+          if (hasPrice) {
+            productId = productData.id;
+            console.log("Found product ID:", productId, "for price ID:", productPriceId);
+            break;
+          }
+        }
+      }
+
+      if (productId) break; // Exit outer loop if found
+    }
+
+    if (!productId) {
+      throw new Error(`Product not found for price ID: ${productPriceId}`);
+    }
+
+    const checkoutData = {
+      products: [productId],
+      successUrl: successUrl,
+      customerEmail: customerEmail,
+      metadata: {
+        ...metadata,
+        priceId: productPriceId,
+      },
+    };
+
+    console.log(
+      "Creating checkout with data:",
+      JSON.stringify(checkoutData, null, 2)
+    );
+
+    const result = await polar.checkouts.create(checkoutData);
+
+    console.log("Checkout created successfully:", result);
+    return result;
+  } catch (error) {
+    console.error("createCheckout error:", error);
+    throw error;
   }
-
-  if (!productId) {
-    throw new Error(`Product not found for price ID: ${productPriceId}`);
-  }
-
-  const checkoutData = {
-    products: [productId],
-    successUrl: successUrl,
-    customerEmail: customerEmail,
-    metadata: {
-      ...metadata,
-      priceId: productPriceId,
-    },
-  };
-
-  console.log(
-    "Creating checkout with data:",
-    JSON.stringify(checkoutData, null, 2)
-  );
-
-  const result = await polar.checkouts.create(checkoutData);
-  return result;
 };
 
 // Action to fetch available plans from Polar (can use fetch)
@@ -113,33 +141,24 @@ export const getAvailablePlansAction = action({
 
     const items: CleanedItem[] = [];
 
-    // The response structure is { result: { items: [...], pagination: {...} } }
+        // The response structure is { result: { items: [...], pagination: {...} } }
     for await (const response of productsResponse) {
       const responseData = response as any;
-
-      // Debug logging to see the actual structure
-      console.log("Raw response data:", JSON.stringify(responseData, null, 2));
 
       // Access the actual products from result.items
       if (responseData.result && responseData.result.items) {
         for (const productData of responseData.result.items) {
-          console.log("Individual product:", JSON.stringify(productData, null, 2));
-          console.log("Product prices:", productData.prices);
-
           items.push({
             id: productData.id,
             name: productData.name,
             description: productData.description || "",
             isRecurring: productData.isRecurring,
-            prices: productData.prices?.map((price: any) => {
-              console.log("Raw price data:", JSON.stringify(price, null, 2));
-              return {
-                id: price.id,
-                amount: price.priceAmount,
-                currency: price.priceCurrency,
-                interval: price.recurringInterval || "one_time",
-              };
-            }) || [],
+            prices: productData.prices?.map((price: any) => ({
+              id: price.id,
+              amount: price.priceAmount,
+              currency: price.priceCurrency,
+              interval: price.recurringInterval || "one_time",
+            })) || [],
           });
         }
       }
@@ -161,35 +180,65 @@ export const createCheckoutAction = action({
     priceId: v.string(),
   },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) {
-      throw new Error("Not authenticated");
-    }
+    try {
+      console.log("createCheckoutAction called with priceId:", args.priceId);
 
-    // First check if user exists
-    let user = await ctx.runQuery(api.users.findUserByToken, {
-      tokenIdentifier: identity.subject,
-    });
-
-    // If user doesn't exist, create them
-    if (!user) {
-      user = await ctx.runMutation(api.users.upsertUser);
-
-      if (!user) {
-        throw new Error("Failed to create user");
+      const identity = await ctx.auth.getUserIdentity();
+      if (!identity) {
+        throw new Error("Not authenticated");
       }
+
+      console.log("User identity:", identity.subject);
+
+      // First check if user exists
+      let user = await ctx.runQuery(api.users.findUserByToken, {
+        tokenIdentifier: identity.subject,
+      });
+
+      console.log("Found user:", user);
+
+      // If user doesn't exist, create them
+      if (!user) {
+        console.log("Creating new user...");
+        user = await ctx.runMutation(api.users.upsertUser);
+
+        if (!user) {
+          throw new Error("Failed to create user");
+        }
+        console.log("Created user:", user);
+      }
+
+      if (!user.email) {
+        throw new Error("User email is required for checkout");
+      }
+
+      console.log("Creating checkout for user email:", user.email);
+
+      // Check environment variables
+      if (!process.env.FRONTEND_URL) {
+        throw new Error("FRONTEND_URL environment variable is not set");
+      }
+
+      const checkout = await createCheckout({
+        customerEmail: user.email,
+        productPriceId: args.priceId,
+        successUrl: `${process.env.FRONTEND_URL}/success`,
+        metadata: {
+          userId: user.tokenIdentifier,
+        },
+      });
+
+      console.log("Checkout result:", checkout);
+
+      if (!checkout || !checkout.url) {
+        throw new Error("Failed to create checkout - no URL returned");
+      }
+
+      return checkout.url;
+    } catch (error) {
+      console.error("createCheckoutAction error:", error);
+      throw error;
     }
-
-    const checkout = await createCheckout({
-      customerEmail: user.email!,
-      productPriceId: args.priceId,
-      successUrl: `${process.env.FRONTEND_URL}/success`,
-      metadata: {
-        userId: user.tokenIdentifier,
-      },
-    });
-
-    return checkout.url;
   },
 });
 
