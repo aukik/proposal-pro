@@ -105,27 +105,44 @@ export const getAvailablePlansAction = action({
       accessToken: process.env.POLAR_ACCESS_TOKEN,
     });
 
-    // Get products from Polar
+        // Get products from Polar
     const productsResponse = await polar.products.list({
       organizationId: process.env.POLAR_ORGANIZATION_ID,
       isArchived: false,
     });
 
     const items: CleanedItem[] = [];
-    for await (const product of productsResponse) {
-      const productData = product as any;
-      items.push({
-        id: productData.id,
-        name: productData.name,
-        description: productData.description || "",
-        isRecurring: productData.isRecurring,
-        prices: productData.prices?.map((price: any) => ({
-          id: price.id,
-          amount: price.priceAmount,
-          currency: price.priceCurrency,
-          interval: price.recurring?.interval || "one_time",
-        })) || [],
-      });
+
+    // The response structure is { result: { items: [...], pagination: {...} } }
+    for await (const response of productsResponse) {
+      const responseData = response as any;
+
+      // Debug logging to see the actual structure
+      console.log("Raw response data:", JSON.stringify(responseData, null, 2));
+
+      // Access the actual products from result.items
+      if (responseData.result && responseData.result.items) {
+        for (const productData of responseData.result.items) {
+          console.log("Individual product:", JSON.stringify(productData, null, 2));
+          console.log("Product prices:", productData.prices);
+
+          items.push({
+            id: productData.id,
+            name: productData.name,
+            description: productData.description || "",
+            isRecurring: productData.isRecurring,
+            prices: productData.prices?.map((price: any) => {
+              console.log("Raw price data:", JSON.stringify(price, null, 2));
+              return {
+                id: price.id,
+                amount: price.priceAmount,
+                currency: price.priceCurrency,
+                interval: price.recurringInterval || "one_time",
+              };
+            }) || [],
+          });
+        }
+      }
     }
 
     return {
