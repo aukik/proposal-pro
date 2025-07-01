@@ -2,6 +2,10 @@
 
 A modern, production-ready SaaS starter template for building full-stack React applications using React Router v7, Convex, Clerk, and Polar.sh. Ready for Vercel deployment with built-in AI chat capabilities.
 
+## ⚠️ Important: Setup Required
+
+**This project requires proper environment configuration to work.** The 401 Unauthorized errors you're seeing indicate missing or incorrect environment variables. Follow the setup instructions below carefully.
+
 ## Features
 
 - 🚀 **React Router v7** - Modern full-stack React framework with SSR
@@ -44,7 +48,7 @@ A modern, production-ready SaaS starter template for building full-stack React a
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - Clerk account for authentication
 - Convex account for database
 - Polar.sh account for subscriptions
@@ -58,42 +62,43 @@ A modern, production-ready SaaS starter template for building full-stack React a
 npm install
 ```
 
-2. Copy the environment file and configure your credentials:
+2. **CRITICAL**: Set up your environment variables:
 
-```bash
-cp .env.example .env.local
-```
+   a. Copy the template:
+   ```bash
+   cp .env.local .env.local.backup
+   ```
 
-3. Set up your environment variables in `.env.local`:
+   b. Edit `.env.local` with your actual values:
+   ```bash
+   # Get from https://dashboard.convex.dev
+   CONVEX_DEPLOYMENT=your_actual_deployment_url
+   VITE_CONVEX_URL=your_actual_convex_url
 
-```bash
-# Convex Configuration
-CONVEX_DEPLOYMENT=your_convex_deployment_here
-VITE_CONVEX_URL=your_convex_url_here
+   # Get from https://dashboard.clerk.com
+   VITE_CLERK_PUBLISHABLE_KEY=pk_test_your_actual_key
+   CLERK_SECRET_KEY=sk_test_your_actual_key
 
-# Clerk Authentication
-VITE_CLERK_PUBLISHABLE_KEY=your_clerk_publishable_key_here
-CLERK_SECRET_KEY=your_clerk_secret_key_here
+   # Get from https://polar.sh
+   POLAR_ACCESS_TOKEN=your_actual_token
+   POLAR_ORGANIZATION_ID=your_actual_org_id
+   POLAR_WEBHOOK_SECRET=your_actual_webhook_secret
+   POLAR_SERVER=sandbox
 
-# Polar.sh Configuration
-POLAR_ACCESS_TOKEN=your_polar_access_token_here
-POLAR_ORGANIZATION_ID=your_polar_organization_id_here
-POLAR_WEBHOOK_SECRET=your_polar_webhook_secret_here
+   # Get from https://platform.openai.com
+   OPENAI_API_KEY=sk-your_actual_openai_key
 
-# OpenAI Configuration (for AI chat)
-OPENAI_API_KEY=your_openai_api_key_here
+   # Update for production
+   FRONTEND_URL=http://localhost:5173
+   ```
 
-# Frontend URL for redirects
-FRONTEND_URL=http://localhost:5173
-```
-
-4. Initialize Convex:
+3. Initialize Convex (must be done after environment setup):
 
 ```bash
 npx convex dev
 ```
 
-5. Set up your Polar.sh webhook endpoint:
+4. Set up your Polar.sh webhook endpoint:
    - URL: `{your_domain}/webhook/polar`
    - Events: All subscription events
 
@@ -106,6 +111,17 @@ npm run dev
 ```
 
 Your application will be available at `http://localhost:5173`.
+
+**Note**: If you see 401 Unauthorized errors, it means your environment variables are not properly configured. Double-check your `.env.local` file.
+
+## 🔧 Recent Fixes Applied
+
+The following issues have been resolved:
+
+1. **Fixed authentication configuration** - Updated `convex/auth.config.ts` to use proper Clerk JWT domain format
+2. **Added public pricing queries** - Created non-authenticated versions for public pages
+3. **Improved error handling** - Added graceful fallbacks for API failures
+4. **Environment template** - Created `.env.local` template with all required variables
 
 ## Building for Production
 

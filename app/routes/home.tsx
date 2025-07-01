@@ -65,7 +65,13 @@ export async function loader(args: Route.LoaderArgs) {
           return null;
         })
       : Promise.resolve(null),
-    fetchAction(api.subscriptions.getAvailablePlans),
+    fetchAction(api.subscriptions.getAvailablePlansAction).catch((error) => {
+      console.error("Failed to fetch plans:", error);
+      return {
+        items: [],
+        pagination: { totalItems: 0, page: 1, pageSize: 10 }
+      };
+    }),
   ]);
 
   return {

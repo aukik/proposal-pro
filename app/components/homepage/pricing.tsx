@@ -19,7 +19,7 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
   const [error, setError] = useState<string | null>(null);
 
   const userSubscription = useQuery(api.subscriptions.fetchUserSubscription);
-  const createCheckout = useAction(api.subscriptions.createCheckoutSession);
+  const createCheckout = useAction(api.subscriptions.createCheckoutAction);
   const createPortalUrl = useAction(api.subscriptions.createCustomerPortalUrl);
   const upsertUser = useMutation(api.users.upsertUser);
 
@@ -88,8 +88,9 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
         ) : (
           <div className="mt-8 grid gap-6 md:mt-20 md:grid-cols-3">
             {loaderData.plans.items
+              .filter((plan: any) => plan.prices && plan.prices.length > 0 && plan.prices[0].amount !== undefined)
               .sort((a: any, b: any) => {
-                const priceComparison = a.prices[0].amount - b.prices[0].amount;
+                const priceComparison = (a.prices[0]?.amount || 0) - (b.prices[0]?.amount || 0);
                 return priceComparison !== 0
                   ? priceComparison
                   : a.name.localeCompare(b.name);
@@ -99,7 +100,9 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
                   loaderData.plans.items.length === 2
                     ? index === 1
                     : index === Math.floor(loaderData.plans.items.length / 2); // Mark middle/higher priced plan as popular
-                const price = plan.prices[0];
+                const price = plan.prices?.[0];
+                if (!price) return null; // Skip plans without valid pricing
+
                 const isCurrentPlan =
                   userSubscription?.status === "active" &&
                   userSubscription?.amount === price.amount;
@@ -126,7 +129,7 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
                       <CardTitle className="font-medium">{plan.name}</CardTitle>
 
                       <span className="my-3 block text-2xl font-semibold">
-                        ${(price.amount / 100).toFixed(0)} /{" "}
+                        ${((price.amount || 0) / 100).toFixed(0)} /{" "}
                         {price.interval || "mo"}
                       </span>
 
@@ -156,7 +159,7 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
                         ) : userSubscription?.status === "active" ? (
                           (() => {
                             const currentAmount = userSubscription.amount || 0;
-                            const newAmount = price.amount;
+                            const newAmount = price.amount || 0;
 
                             if (newAmount > currentAmount) {
                               return `Upgrade (+$${(
@@ -216,7 +219,7 @@ export default function Pricing({ loaderData }: { loaderData: any }) {
 
         {userSubscription &&
           !loaderData.plans?.items.some(
-            (plan: any) => plan.prices[0].id === userSubscription.polarPriceId
+            (plan: any) => plan.prices?.[0]?.id === userSubscription.polarPriceId
           ) && (
             <div className="mt-8 p-4 bg-amber-50 border border-amber-200 rounded-md max-w-md mx-auto">
               <p className="text-amber-800 text-center text-sm">

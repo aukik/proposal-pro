@@ -1,4 +1,28 @@
 import { Polar } from "@polar-sh/sdk";
+
+interface Price {
+  id: string;
+  amount: number;
+  currency: string;
+  interval: string;
+}
+
+interface CleanedItem {
+  id: string;
+  name: string;
+  description: string;
+  isRecurring: boolean;
+  prices: Price[];
+}
+
+interface GetAvailablePlansResult {
+  items: CleanedItem[];
+  pagination: {
+    totalItems: number;
+    page: number;
+    pageSize: number;
+  };
+}
 import { v } from "convex/values";
 import { Webhook, WebhookVerificationError } from "standardwebhooks";
 import { api } from "./_generated/api";
@@ -25,18 +49,19 @@ const createCheckout = async ({
   });
 
   // Get product ID from price ID
-  const { result: productsResult } = await polar.products.list({
+  const productsResponse = await polar.products.list({
     organizationId: process.env.POLAR_ORGANIZATION_ID,
     isArchived: false,
   });
 
   let productId = null;
-  for (const product of productsResult.items) {
-    const hasPrice = product.prices.some(
+  for await (const product of productsResponse) {
+    const productData = product as any;
+    const hasPrice = productData.prices?.some(
       (price: any) => price.id === productPriceId
     );
     if (hasPrice) {
-      productId = product.id;
+      productId = productData.id;
       break;
     }
   }
@@ -64,73 +89,57 @@ const createCheckout = async ({
   return result;
 };
 
-export const getAvailablePlansQuery = query({
-  handler: async (ctx) => {
+// Action to fetch available plans from Polar (can use fetch)
+
+
+
+
+export const getAvailablePlansAction = action({
+  handler: async (): Promise<GetAvailablePlansResult> => {
+    if (!process.env.POLAR_ACCESS_TOKEN) {
+      throw new Error("POLAR_ACCESS_TOKEN is not configured");
+    }
+
     const polar = new Polar({
-      server: "sandbox",
+      server: (process.env.POLAR_SERVER as "sandbox" | "production") || "sandbox",
       accessToken: process.env.POLAR_ACCESS_TOKEN,
     });
 
-    const { result } = await polar.products.list({
+    // Get products from Polar
+    const productsResponse = await polar.products.list({
       organizationId: process.env.POLAR_ORGANIZATION_ID,
       isArchived: false,
     });
 
-    // Transform the data to remove Date objects and keep only needed fields
-    const cleanedItems = result.items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      isRecurring: item.isRecurring,
-      prices: item.prices.map((price: any) => ({
-        id: price.id,
-        amount: price.priceAmount,
-        currency: price.priceCurrency,
-        interval: price.recurringInterval,
-      })),
-    }));
+    const items: CleanedItem[] = [];
+    for await (const product of productsResponse) {
+      const productData = product as any;
+      items.push({
+        id: productData.id,
+        name: productData.name,
+        description: productData.description || "",
+        isRecurring: productData.isRecurring,
+        prices: productData.prices?.map((price: any) => ({
+          id: price.id,
+          amount: price.priceAmount,
+          currency: price.priceCurrency,
+          interval: price.recurring?.interval || "one_time",
+        })) || [],
+      });
+    }
 
     return {
-      items: cleanedItems,
-      pagination: result.pagination,
+      items,
+      pagination: {
+        totalItems: items.length,
+        page: 1,
+        pageSize: items.length,
+      },
     };
   },
 });
 
-export const getAvailablePlans = action({
-  handler: async (ctx) => {
-    const polar = new Polar({
-      server: "sandbox",
-      accessToken: process.env.POLAR_ACCESS_TOKEN,
-    });
-
-    const { result } = await polar.products.list({
-      organizationId: process.env.POLAR_ORGANIZATION_ID,
-      isArchived: false,
-    });
-
-    // Transform the data to remove Date objects and keep only needed fields
-    const cleanedItems = result.items.map((item) => ({
-      id: item.id,
-      name: item.name,
-      description: item.description,
-      isRecurring: item.isRecurring,
-      prices: item.prices.map((price: any) => ({
-        id: price.id,
-        amount: price.priceAmount,
-        currency: price.priceCurrency,
-        interval: price.recurringInterval,
-      })),
-    }));
-
-    return {
-      items: cleanedItems,
-      pagination: result.pagination,
-    };
-  },
-});
-
-export const createCheckoutSession = action({
+export const createCheckoutAction = action({
   args: {
     priceId: v.string(),
   },

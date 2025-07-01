@@ -3,7 +3,7 @@ import { useAuth } from "@clerk/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { Check, Loader2 } from "lucide-react";
 import * as React from "react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "~/components/ui/button";
 import {
   Card,
@@ -18,10 +18,12 @@ import { api } from "../../convex/_generated/api";
 export default function IntegratedPricing() {
   const { isSignedIn, userId } = useAuth();
   const [loadingPriceId, setLoadingPriceId] = useState<string | null>(null);
-  const [plans, setPlans] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [plans, setPlans] = useState<any>(undefined);
+  const [plansLoading, setPlansLoading] = useState(true);
 
-  const getPlans = useAction(api.subscriptions.getAvailablePlans);
+  // Use action for loading plans since it needs to make external API calls
+  const getPlans = useAction(api.subscriptions.getAvailablePlansAction);
   const subscriptionStatus = useQuery(
     api.subscriptions.checkUserSubscriptionStatus,
     {
@@ -29,7 +31,7 @@ export default function IntegratedPricing() {
     }
   );
   const userSubscription = useQuery(api.subscriptions.fetchUserSubscription);
-  const createCheckout = useAction(api.subscriptions.createCheckoutSession);
+  const createCheckout = useAction(api.subscriptions.createCheckoutAction);
   const createPortalUrl = useAction(api.subscriptions.createCustomerPortalUrl);
   const upsertUser = useMutation(api.users.upsertUser);
 
@@ -40,17 +42,22 @@ export default function IntegratedPricing() {
     }
   }, [isSignedIn, upsertUser]);
 
-  // Load plans on component mount
-  React.useEffect(() => {
+  // Load plans when component mounts
+  useEffect(() => {
     const loadPlans = async () => {
       try {
-        const result = await getPlans();
-        setPlans(result);
+        setPlansLoading(true);
+        const plansData = await getPlans();
+        setPlans(plansData);
       } catch (error) {
-        console.error("Failed to load plans:", error);
-        setError("Failed to load pricing plans. Please try again.");
+        console.error("Failed to fetch plans:", error);
+        setError("Failed to load pricing plans. Please refresh the page.");
+        setPlans({ items: [], pagination: { totalItems: 0, page: 1, pageSize: 10 } });
+      } finally {
+        setPlansLoading(false);
       }
     };
+
     loadPlans();
   }, [getPlans]);
 
@@ -96,7 +103,7 @@ export default function IntegratedPricing() {
     }
   };
 
-  if (!plans) {
+  if (plansLoading) {
     return (
       <section className="flex flex-col items-center justify-center min-h-screen px-4">
         <div className="flex items-center gap-2">
@@ -104,6 +111,24 @@ export default function IntegratedPricing() {
           <span>Loading plans...</span>
         </div>
         {error && <p className="text-red-500 mt-4 text-center">{error}</p>}
+      </section>
+    );
+  }
+
+  if (!plans?.items || plans.items.length === 0) {
+    return (
+      <section className="flex flex-col items-center justify-center min-h-screen px-4">
+        <div className="text-center">
+          <h1 className="text-4xl font-bold tracking-tight mb-4">
+            Pricing Plans
+          </h1>
+          <p className="text-xl text-muted-foreground mb-4">
+            No pricing plans available at the moment.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Please check back later or contact support.
+          </p>
+        </div>
       </section>
     );
   }
